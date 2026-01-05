@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="sw">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StarY App</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/emoji-picker-element@^1/index.js"></script>
+    <style>
+        body {margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background:#0b141a; color:#e9edef; height:100vh; display:flex; overflow:hidden;}
+        #sidebar {width:380px; background:#111b21; display:flex; flex-direction:column; border-right:1px solid #222;}
+        #sidebar-header {background:#202c33; padding:20px; text-align:center; cursor:pointer;}
+        #sidebar-header img {width:100px; height:100px; border-radius:50%; border:4px solid #00a884;}
+        #my-name {font-size:1.4em; margin-top:10px; font-weight:bold;}
+        #chat-list {flex:1; overflow-y:auto;}
+        .chat-item {display:flex; align-items:center; padding:15px; cursor:pointer; border-bottom:1px solid #222;}
+        .chat-item:hover {background:#2a3942;}
+        .chat-item.active {background:#2a3942;}
+        .chat-item img {width:55px; height:55px; border-radius:50%; margin-right:15px;}
+        .chat-name {font-weight:bold;}
+        #main {flex:1; display:flex; flex-direction:column; background:#0e1317;}
+        #chat-header {background:#202c33; padding:15px; display:flex; align-items:center;}
+        #chat-header img {width:45px; height:45px; border-radius:50%; margin-right:15px;}
+        #room-name {font-size:1.2em; font-weight:bold;}
+        #online-count {font-size:0.9em; color:#00ff88;}
+        #messages {flex:1; overflow-y:auto; padding:20px;}
+        .message {max-width:70%; margin:10px 0; padding:10px 14px; border-radius:12px; word-wrap:break-word; opacity:0; animation:msgIn 0.4s ease forwards;}
+        .received {background:#202c33; align-self:flex-start; border-bottom-left-radius:4px;}
+        .sent {background:#005c4b; align-self:flex-end; border-bottom-right-radius:4px; animation:msgInRight 0.4s ease forwards;}
+        .message img, .message video, .message audio {max-width:100%; border-radius:8px; margin-top:8px;}
+        .time {font-size:0.8em; color:#aaa; text-align:right; margin-top:5px;}
+        #input-area {background:#202c33; padding:10px; display:flex; align-items:center;}
+        #emoji-btn, #attach-btn, #voice-btn {background:none; border:none; font-size:1.8em; cursor:pointer; margin:0 8px;}
+        #emoji-picker {display:none; position:absolute; bottom:70px; left:20px; z-index:100;}
+        #message-input {flex:1; padding:12px 16px; background:#2a3942; border:none; border-radius:30px; color:white;}
+        #send-btn {background:#00a884; border:none; padding:12px 16px; border-radius:50%; color:white; font-size:1.2em; cursor:pointer;}
+        @keyframes msgIn {from {opacity:0; transform:translateY(20px);} to {opacity:1; transform:translateY(0);}}
+        @keyframes msgInRight {from {opacity:0; transform:translateY(20px) translateX(20px);} to {opacity:1; transform:translateY(0) translateX(0);}}
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div id="sidebar-header" onclick="openSettings()">
+            <img id="my-pic" src="/static/default-avatar.png">
+            <div id="my-name">StarY User</div>
+        </div>
+        <div id="chat-list">
+            <div class="chat-item active" data-room="General">
+                <img src="/static/group.png">
+                <div>
+                    <div class="chat-name">General Group</div>
+                    <div style="color:#8696a0;">Chat na wadau wote</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="main">
+        <div id="chat-header">
+            <img id="room-pic" src="/static/group.png">
+            <div>
+                <div id="room-name">General Group</div>
+                <div id="online-count">1 online</div>
+            </div>
+        </div>
+        <div id="messages"></div>
+        <div id="input-area">
+            <button id="emoji-btn">😊</button>
+            <emoji-picker id="emoji-picker"></emoji-picker>
+            <button id="attach-btn">📎</button>
+            <input type="file" id="file-input" accept="image/*,video/*,audio/*" style="display:none;">
+            <input type="text" id="message-input" placeholder="Andika ujumbe...">
+            <button id="voice-btn">🎤</button>
+            <button id="send-btn">➤</button>
+        </div>
+    </div>
+
+    <div id="settings-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.9); z-index:100; justify-content:center; align-items:center;">
+        <div style="background:#111b21; padding:30px; border-radius:15px; width:90%; max-width:400px; text-align:center;">
+            <img id="settings-pic" src="/static/default-avatar.png" style="width:150px; height:150px; border-radius:50%;">
+            <h2 style="color:white;">Badili Profile</h2>
+            <input type="text" id="edit-name" placeholder="Jina jipya" style="width:80%; padding:10px; margin:10px 0; border:none; border-radius:8px;">
+            <input type="file" id="edit-pic" accept="image/*" style="margin:10px 0;">
+            <br>
+            <button onclick="saveSettings()" style="background:#00a884; color:white; padding:12px 30px; border:none; border-radius:8px;">Save</button>
+            <button onclick="document.getElementById('settings-modal').style.display='none'" style="background:#666; color:white; padding:12px 30px; border:none; border-radius:8px; margin-left:10px;">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        let myPhone = prompt("Namba yako:", "255712345678") || "255700000000";
+        let myName = prompt("Jina lako:", "StarY User") || "StarY User";
+        let myPic = "/static/default-avatar.png";
+        let currentRoom = "General";
+
+        document.getElementById('my-name').textContent = myName;
+        document.getElementById('my-pic').src = myPic;
+
+        function joinRoom(room) {
+            currentRoom = room;
+            socket.emit('join', { username: myName, phone: myPhone, profile_pic: myPic, room: room });
+        }
+        joinRoom(currentRoom);
+
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('message-input');
+
+        function addMessage(data, isOwn) {
+            const div = document.createElement('div');
+            div.className = `message ${isOwn ? 'sent' : 'received'}`;
+            let content = `<strong>${data.username}</strong><br>${data.message || ''}`;
+            if (data.file_url) {
+                if (data.file_url.includes('.mp4')) content += `<video src="${data.file_url}" controls></video>`;
+                else if (data.file_url.includes('webm')) content += `<audio src="${data.file_url}" controls></audio><br>🔊 Voice`;
+                else content += `<img src="${data.file_url}" onclick="window.open(this.src)">`;
+            }
+            content += `<div class="time">${data.time} ${isOwn ? '✓✓' : ''}</div>`;
+            div.innerHTML = content;
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        socket.on('message_history', msgs => {
+            messagesDiv.innerHTML = '';
+            msgs.forEach(m => addMessage(m, m.phone === myPhone));
+        });
+
+        socket.on('new_message', data => addMessage(data, data.phone === myPhone));
+
+        socket.on('online_users', count => document.getElementById('online-count').textContent = count + " online");
+
+        // Emoji
+        document.getElementById('emoji-btn').onclick = () => document.getElementById('emoji-picker').style.display = document.getElementById('emoji-picker').style.display === 'block' ? 'none' : 'block';
+        document.getElementById('emoji-picker').addEventListener('emoji-click', e => {
+            input.value += e.detail.unicode;
+            input.focus();
+        });
+
+        // Attach
+        document.getElementById('attach-btn').onclick = () => document.getElementById('file-input').click();
+
+        // Voice
+        let recorder;
+        let audioChunks = [];
+        document.getElementById('voice-btn').addEventListener('mousedown', async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+            recorder = new MediaRecorder(stream);
+            audioChunks = [];
+            recorder.start();
+            document.getElementById('voice-btn').textContent = '⏺️';
+        });
+        document.getElementById('voice-btn').addEventListener('mouseup', () => {
+            recorder.stop();
+            document.getElementById('voice-btn').textContent = '🎤';
+        });
+        recorder.onstop = async () => {
+            const blob = new Blob(audioChunks, {type: 'audio/webm'});
+            const fd = new FormData();
+            fd.append('file', blob, 'voice.webm');
+            const res = await fetch('/upload', {method: 'POST', body: fd});
+            const json = await res.json();
+            if (json.url) socket.emit('send_message', {username: myName, phone: myPhone, message: '', file_url: json.url, room: currentRoom});
+        };
+        recorder.ondataavailable = e => audioChunks.push(e.data);
+
+        // Send
+        async function sendMessage() {
+            const msg = input.value.trim();
+            let file_url = null;
+            if (document.getElementById('file-input').files[0]) {
+                const fd = new FormData();
+                fd.append('file', document.getElementById('file-input').files[0]);
+                const res = await fetch('/upload', {method: 'POST', body: fd});
+                const json = await res.json();
+                file_url = json.url;
+                document.getElementById('file-input').value = '';
+            }
+            if (msg || file_url) {
+                socket.emit('send_message', {username: myName, phone: myPhone, message: msg, file_url, profile_pic: myPic, room: currentRoom});
+                input.value = '';
+            }
+        }
+        document.getElementById('send-btn').onclick = sendMessage;
+        input.addEventListener('keypress', e => e.key === 'Enter' && sendMessage());
+
+        // Settings
+        function openSettings() {
+            document.getElementById('settings-modal').style.display = 'flex';
+            document.getElementById('settings-pic').src = myPic;
+            document.getElementById('edit-name').value = myName;
+        }
+
+        async function saveSettings() {
+            const newName = document.getElementById('edit-name').value.trim() || myName;
+            let newPic = myPic;
+            if (document.getElementById('edit-pic').files[0]) {
+                const fd = new FormData();
+                fd.append('file', document.getElementById('edit-pic').files[0]);
+                const res = await fetch('/upload', {method: 'POST', body: fd});
+                const json = await res.json();
+                if (json.url) newPic = json.url;
+            }
+            myName = newName;
+            myPic = newPic;
+            document.getElementById('my-name').textContent = myName;
+            document.getElementById('my-pic').src = myPic;
+            document.getElementById('settings-modal').style.display = 'none';
+            joinRoom(currentRoom);
+        }
+    </script>
+</body>
+</html>
