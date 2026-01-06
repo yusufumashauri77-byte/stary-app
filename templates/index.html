@@ -88,127 +88,223 @@
     </div>
 
     <script>
-        const socket = io();
+    let myPhone = prompt("Namba yako:", "255712345678") || "255700000000";
+    let myName = prompt("Jina lako:", "StarY User") || "StarY User";
+    let myPic = "/static/default-avatar.png";
+    let currentRoom = "General";
 
-        let myPhone = prompt("Namba yako:", "255712345678") || "255700000000";
-        let myName = prompt("Jina lako:", "StarY User") || "StarY User";
-        let myPic = "/static/default-avatar.png";
-        let currentRoom = "General";
+    document.getElementById('my-name').textContent = myName;
+    document.getElementById('my-pic').src = myPic;
+    document.getElementById('room-name').textContent = "General Group";
 
-        document.getElementById('my-name').textContent = myName;
-        document.getElementById('my-pic').src = myPic;
+    const messagesDiv = document.getElementById('messages');
+    const input = document.getElementById('message-input');
+    let lastMessageCount = 0;
 
-        function joinRoom(room) {
-            currentRoom = room;
-            socket.emit('join', { username: myName, phone: myPhone, profile_pic: myPic, room: room });
-        }
-        joinRoom(currentRoom);
+    // Update online count
+    async function updateOnline() {
+        try {
+            const res = await fetch(`/api/online_count/${currentRoom}`);
+            const data = await res.json();
+            document.getElementById('online-count').textContent = data.count + " online";
+        } catch (e) {}
+    }
 
-        const messagesDiv = document.getElementById('messages');
-        const input = document.getElementById('message-input');
+    // Heartbeat ili uonekane online kila sekunde 8
+    setInterval(() => {
+        fetch('/api/heartbeat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({phone: myPhone, room: currentRoom})
+        });
+        updateOnline();
+    }, 8000);
 
-        function addMessage(data, isOwn) {
-            const div = document.createElement('div');
-            div.className = `message ${isOwn ? 'sent' : 'received'}`;
-            let content = `<strong>${data.username}</strong><br>${data.message || ''}`;
-            if (data.file_url) {
-                if (data.file_url.includes('.mp4')) content += `<video src="${data.file_url}" controls></video>`;
-                else if (data.file_url.includes('webm')) content += `<audio src="${data.file_url}" controls></audio><br>🔊 Voice`;
-                else content += `<img src="${data.file_url}" onclick="window.open(this.src)">`;
+    // Poll messages kila sekunde 2
+    async function loadMessages() {
+        try {
+            const res = await fetch(`/api/messages/${currentRoom}`);
+            const msgs = await res.json();
+            if (msgs.length !== lastMessageCount) {
+                messagesDiv.innerHTML = '';
+                msgs.forEach(m => addMessage(m, m.phone === myPhone));
+                lastMessageCount = msgs.length;
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
             }
-            content += `<div class="time">${data.time} ${isOwn ? '✓✓' : ''}</div>`;
-            div.innerHTML = content;
-            messagesDiv.appendChild(div);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        } catch (e) {}
+    }
+    setInterval(loadMessages, 2000);
+    loadMessages();
+    updateOnline();
+
+    function addMessage(data, isOwn) {
+        const div = document.createElement('div');
+        div.className = `message ${isOwn ? 'sent' : 'received'}`;
+        let content = `<strong>${data.username}</strong><br>`;
+        if (data.message) content += data.message;
+        if (data.file_url) {
+            if (data.file_url.endsWith('.mp4') || data.file_url.endsWith('.webm')) {
+                if (data.file_url.includes('voice')) {
+                    content += `<audio src="${data.file_url}" controls></audio><br>🔊 Voice note`;
+                } else {
+                    content += `<video src="${data.file_url}" controls style="max-width:100%; border-radius:8px;"></video>`;
+                }
+            } else {
+                content += `<img src="${data.file_url}" onclick="window.open(this.src)" style="max-width:100%; border-radius:8px; margin-top:8px;">`;
+            }
+        }
+        content += `<div class="time">${data.time} ${isOwn ? '✓✓' : ''}</div>`;
+        div.innerHTML = content;
+        messagesDiv.appendChild(div);
+    }
+
+    // Tumia file au text
+    async function sendMessage() {
+        const msg = input.value.trim();
+        let file_url = null;
+
+        if (document.getElementById('file-input').files[0]) {
+            const fd = new FormData();
+            fd.append('file', document.getElementById('file-input').files[0]);
+            const res = await fetch('/upload', {method: 'POST', body: fd});
+            const json = await res.json();
+            if (json.url) file_url = json.url;
+            document.getElementById('file-input').value = '';
         }
 
-        socket.on('message_history', msgs => {
-            messagesDiv.innerHTML = '';
-            msgs.forEach(m => addMessage(m, m.phone === myPhone));
-        });
+        if (msg || file_url) {
+            await fetch('/api/send', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: myName,
+                    phone: myPhone,
+                    message: msg,
+                    file_url: file_url,
+                    profile_pic: myPic,
+                    room: currentRoom
+                })
+            });
+            input.value = '';
+            loadMessages();
+        }
+    }
 
-        socket.on('new_message', data => addMessage(data, data.phone === myPhone));
+    document.getElementById('send-btn').onclick = sendMessage;
+    input.addEventListener('keypress', e => {
+        if (e.key === 'Enter') sendMessage();
+    });
 
-        socket.on('online_users', count => document.getElementById('online-count').textContent = count + " online");
+    // Emoji picker
+    document.getElementById('emoji-btn').onclick = () => {
+        document.getElementById('emoji-picker').style.display = 
+            document.getElementById('emoji-picker').style.display === 'block' ? 'none' : 'block';
+    };
+    document.getElementById('emoji-picker').addEventListener('emoji-click', e => {
+        input.value += e.detail.unicode;
+        input.focus();
+    });
 
-        // Emoji
-        document.getElementById('emoji-btn').onclick = () => document.getElementById('emoji-picker').style.display = document.getElementById('emoji-picker').style.display === 'block' ? 'none' : 'block';
-        document.getElementById('emoji-picker').addEventListener('emoji-click', e => {
-            input.value += e.detail.unicode;
-            input.focus();
-        });
+    // Attach file
+    document.getElementById('attach-btn').onclick = () => {
+        document.getElementById('file-input').click();
+    };
 
-        // Attach
-        document.getElementById('attach-btn').onclick = () => document.getElementById('file-input').click();
-
-        // Voice
-        let recorder;
-        let audioChunks = [];
-        document.getElementById('voice-btn').addEventListener('mousedown', async () => {
+    // Voice recording (inabaki kufanya kazi)
+    let recorder;
+    let audioChunks = [];
+    document.getElementById('voice-btn').addEventListener('mousedown', async () => {
+        try {
             const stream = await navigator.mediaDevices.getUserMedia({audio: true});
             recorder = new MediaRecorder(stream);
             audioChunks = [];
             recorder.start();
             document.getElementById('voice-btn').textContent = '⏺️';
-        });
-        document.getElementById('voice-btn').addEventListener('mouseup', () => {
+        } catch (e) {
+            alert("Ruhusu microphone kwanza");
+        }
+    });
+    document.getElementById('voice-btn').addEventListener('mouseup', () => {
+        if (recorder) recorder.stop();
+        document.getElementById('voice-btn').textContent = '🎤';
+    });
+    document.getElementById('voice-btn').addEventListener('mouseleave', () => {
+        if (recorder && recorder.state === 'recording') {
             recorder.stop();
             document.getElementById('voice-btn').textContent = '🎤';
+        }
+    });
+    if (typeof MediaRecorder !== 'undefined') {
+        document.addEventListener('readystatechange', () => {
+            if (document.readyState === 'complete') {
+                const voiceBtn = document.getElementById('voice-btn');
+                voiceBtn.addEventListener('touchstart', async (e) => {
+                    e.preventDefault();
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+                        recorder = new MediaRecorder(stream);
+                        audioChunks = [];
+                        recorder.start();
+                        voiceBtn.textContent = '⏺️';
+                    } catch (e) {}
+                });
+                voiceBtn.addEventListener('touchend', () => {
+                    if (recorder) recorder.stop();
+                    voiceBtn.textContent = '🎤';
+                });
+            }
         });
-        recorder.onstop = async () => {
-            const blob = new Blob(audioChunks, {type: 'audio/webm'});
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+        if (typeof MediaRecorder !== 'undefined') {
+            recorder.ondataavailable = e => audioChunks.push(e.data);
+            recorder.onstop = async () => {
+                const blob = new Blob(audioChunks, {type: 'audio/webm'});
+                const fd = new FormData();
+                fd.append('file', blob, 'voice.webm');
+                const res = await fetch('/upload', {method: 'POST', body: fd});
+                const json = await res.json();
+                if (json.url) {
+                    await fetch('/api/send', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            username: myName,
+                            phone: myPhone,
+                            message: '',
+                            file_url: json.url,
+                            room: currentRoom
+                        })
+                    });
+                    loadMessages();
+                }
+            };
+        }
+    });
+
+    // Settings modal
+    function openSettings() {
+        document.getElementById('settings-modal').style.display = 'flex';
+        document.getElementById('settings-pic').src = myPic;
+        document.getElementById('edit-name').value = myName;
+    }
+
+    async function saveSettings() {
+        const newName = document.getElementById('edit-name').value.trim() || myName;
+        let newPic = myPic;
+        if (document.getElementById('edit-pic').files[0]) {
             const fd = new FormData();
-            fd.append('file', blob, 'voice.webm');
+            fd.append('file', document.getElementById('edit-pic').files[0]);
             const res = await fetch('/upload', {method: 'POST', body: fd});
             const json = await res.json();
-            if (json.url) socket.emit('send_message', {username: myName, phone: myPhone, message: '', file_url: json.url, room: currentRoom});
-        };
-        recorder.ondataavailable = e => audioChunks.push(e.data);
-
-        // Send
-        async function sendMessage() {
-            const msg = input.value.trim();
-            let file_url = null;
-            if (document.getElementById('file-input').files[0]) {
-                const fd = new FormData();
-                fd.append('file', document.getElementById('file-input').files[0]);
-                const res = await fetch('/upload', {method: 'POST', body: fd});
-                const json = await res.json();
-                file_url = json.url;
-                document.getElementById('file-input').value = '';
-            }
-            if (msg || file_url) {
-                socket.emit('send_message', {username: myName, phone: myPhone, message: msg, file_url, profile_pic: myPic, room: currentRoom});
-                input.value = '';
-            }
+            if (json.url) newPic = json.url;
         }
-        document.getElementById('send-btn').onclick = sendMessage;
-        input.addEventListener('keypress', e => e.key === 'Enter' && sendMessage());
-
-        // Settings
-        function openSettings() {
-            document.getElementById('settings-modal').style.display = 'flex';
-            document.getElementById('settings-pic').src = myPic;
-            document.getElementById('edit-name').value = myName;
-        }
-
-        async function saveSettings() {
-            const newName = document.getElementById('edit-name').value.trim() || myName;
-            let newPic = myPic;
-            if (document.getElementById('edit-pic').files[0]) {
-                const fd = new FormData();
-                fd.append('file', document.getElementById('edit-pic').files[0]);
-                const res = await fetch('/upload', {method: 'POST', body: fd});
-                const json = await res.json();
-                if (json.url) newPic = json.url;
-            }
-            myName = newName;
-            myPic = newPic;
-            document.getElementById('my-name').textContent = myName;
-            document.getElementById('my-pic').src = myPic;
-            document.getElementById('settings-modal').style.display = 'none';
-            joinRoom(currentRoom);
-        }
-    </script>
+        myName = newName;
+        myPic = newPic;
+        document.getElementById('my-name').textContent = myName;
+        document.getElementById('my-pic').src = myPic;
+        document.getElementById('settings-modal').style.display = 'none';
+    }
+</script>
 </body>
 </html>
