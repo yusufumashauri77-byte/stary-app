@@ -121,18 +121,23 @@
     }, 8000);
 
     // Poll messages kila sekunde 2
-    async function loadMessages() {
-        try {
-            const res = await fetch(`/api/messages/${currentRoom}`);
-            const msgs = await res.json();
-            if (msgs.length !== lastMessageCount) {
-                messagesDiv.innerHTML = '';
-                msgs.forEach(m => addMessage(m, m.phone === myPhone));
-                lastMessageCount = msgs.length;
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+   async function loadMessages() {
+    try {
+        const res = await fetch(`/api/messages/${currentRoom}`);
+        const msgs = await res.json();
+        
+        // Kama ni mara ya kwanza au messages ni zaidi, tuna-append tu
+        if (msgs.length > lastMessageCount) {
+            for (let i = lastMessageCount; i < msgs.length; i++) {
+                addMessage(msgs[i], msgs[i].phone === myPhone);
             }
-        } catch (e) {}
+            lastMessageCount = msgs.length;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+    } catch (e) {
+        console.log("Error loading messages:", e);
     }
+}
     setInterval(loadMessages, 2000);
     loadMessages();
     updateOnline();
@@ -308,3 +313,4 @@
 </script>
 </body>
 </html>
+
