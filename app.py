@@ -7,13 +7,28 @@ import json
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'stary-app-2026-secret'
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
+app.config['DATA_FILE'] = 'messages.json'
+
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Data in-memory (itabaki hadi server i-restart)
-messages = {'General': []}
-online_users = set()  # tuna-store phone numbers tu
+# Load messages from file au create new
+def load_messages():
+    if os.path.exists(app.config['DATA_FILE']):
+        try:
+            with open(app.config['DATA_FILE'], 'r') as f:
+                return json.load(f)
+        except:
+            return {'General': []}
+    return {'General': []}
 
-ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'pdf', 'webm', 'mp3'}
+def save_messages():
+    with open(app.config['DATA_FILE'], 'w') as f:
+        json.dump(messages, f)
+
+messages = load_messages()
+online_users = set()  # bado in-memory (kwa sababu online ni temporary)
+
+ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'pdf', 'webm', 'mp3', 'wav'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT
@@ -38,7 +53,6 @@ def upload():
 def uploaded(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# API endpoints za polling
 @app.route('/api/messages/<room>')
 def get_messages(room):
     return jsonify(messages.get(room, []))
@@ -59,30 +73,20 @@ def send_message():
         'time': datetime.now().strftime("%H:%M")
     }
     messages[room].append(msg_data)
+    save_messages()  # Hifadhi mara moja
     return jsonify({'status': 'sent'})
-
-@app.route('/api/online', methods=['POST'])
-def update_online():
-    data = request.json
-    phone = data.get('phone')
-    room = data.get('room', 'General')
-    if phone:
-        online_users.add(phone)
-    return jsonify({'count': len([u for u in online_users if True])})
-
-@app.route('/api/online_count/<room>')
-def online_count(room):
-    # Kwa kuwa hatuna room-specific tracking vizuri, tunarudisha total (unaweza kuboresha baadaye)
-    return jsonify({'count': len(online_users)})
 
 @app.route('/api/heartbeat', methods=['POST'])
 def heartbeat():
-    # Client atutumia heartbeat kila sekunde 10 ili tu-update online
     data = request.json
     phone = data.get('phone')
     if phone:
         online_users.add(phone)
-    return jsonify({'status': 'ok'})
+    return jsonify({'count': len(online_users)})
+
+@app.route('/api/online_count/<room>')
+def online_count(room):
+    return jsonify({'count': len(online_users)})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
