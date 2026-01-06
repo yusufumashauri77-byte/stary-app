@@ -88,179 +88,166 @@
     </div>
 
     <script>
-    let myPhone = prompt("Namba yako:", "255712345678") || "255700000000";
-    let myName = prompt("Jina lako:", "StarY User") || "StarY User";
-    let myPic = "/static/default-avatar.png";
-    let currentRoom = "General";
+        let myPhone = prompt("Namba yako:", "255712345678") || "255700000000";
+        let myName = prompt("Jina lako:", "StarY User") || "StarY User";
+        let myPic = "/static/default-avatar.png";
+        let currentRoom = "General";
 
-    document.getElementById('my-name').textContent = myName;
-    document.getElementById('my-pic').src = myPic;
-    document.getElementById('room-name').textContent = "General Group";
+        document.getElementById('my-name').textContent = myName;
+        document.getElementById('my-pic').src = myPic;
+        document.getElementById('room-name').textContent = "General Group";
 
-    const messagesDiv = document.getElementById('messages');
-    const input = document.getElementById('message-input');
-    let lastMessageCount = 0;
+        const messagesDiv = document.getElementById('messages');
+        const input = document.getElementById('message-input');
+        let lastMessageCount = 0;
 
-    // Update online count
-    async function updateOnline() {
-        try {
-            const res = await fetch(`/api/online_count/${currentRoom}`);
-            const data = await res.json();
-            document.getElementById('online-count').textContent = data.count + " online";
-        } catch (e) {}
-    }
-
-    // Heartbeat ili uonekane online kila sekunde 8
-    setInterval(() => {
-        fetch('/api/heartbeat', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({phone: myPhone, room: currentRoom})
-        });
-        updateOnline();
-    }, 8000);
-
-    // Poll messages kila sekunde 2
-   async function loadMessages() {
-    try {
-        const res = await fetch(`/api/messages/${currentRoom}`);
-        const msgs = await res.json();
-        
-        // Kama ni mara ya kwanza au messages ni zaidi, tuna-append tu
-        if (msgs.length > lastMessageCount) {
-            for (let i = lastMessageCount; i < msgs.length; i++) {
-                addMessage(msgs[i], msgs[i].phone === myPhone);
-            }
-            lastMessageCount = msgs.length;
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-    } catch (e) {
-        console.log("Error loading messages:", e);
-    }
-}
-    setInterval(loadMessages, 2000);
-    loadMessages();
-    updateOnline();
-
-    function addMessage(data, isOwn) {
-        const div = document.createElement('div');
-        div.className = `message ${isOwn ? 'sent' : 'received'}`;
-        let content = `<strong>${data.username}</strong><br>`;
-        if (data.message) content += data.message;
-        if (data.file_url) {
-            if (data.file_url.endsWith('.mp4') || data.file_url.endsWith('.webm')) {
-                if (data.file_url.includes('voice')) {
-                    content += `<audio src="${data.file_url}" controls></audio><br>🔊 Voice note`;
-                } else {
-                    content += `<video src="${data.file_url}" controls style="max-width:100%; border-radius:8px;"></video>`;
-                }
-            } else {
-                content += `<img src="${data.file_url}" onclick="window.open(this.src)" style="max-width:100%; border-radius:8px; margin-top:8px;">`;
-            }
-        }
-        content += `<div class="time">${data.time} ${isOwn ? '✓✓' : ''}</div>`;
-        div.innerHTML = content;
-        messagesDiv.appendChild(div);
-    }
-
-    // Tumia file au text
-    async function sendMessage() {
-        const msg = input.value.trim();
-        let file_url = null;
-
-        if (document.getElementById('file-input').files[0]) {
-            const fd = new FormData();
-            fd.append('file', document.getElementById('file-input').files[0]);
-            const res = await fetch('/upload', {method: 'POST', body: fd});
-            const json = await res.json();
-            if (json.url) file_url = json.url;
-            document.getElementById('file-input').value = '';
+        // Update online count
+        async function updateOnline() {
+            try {
+                const res = await fetch(`/api/online_count/${currentRoom}`);
+                const data = await res.json();
+                document.getElementById('online-count').textContent = data.count + " online";
+            } catch (e) {}
         }
 
-        if (msg || file_url) {
-            await fetch('/api/send', {
+        // Heartbeat kila sekunde 8
+        setInterval(() => {
+            fetch('/api/heartbeat', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    username: myName,
-                    phone: myPhone,
-                    message: msg,
-                    file_url: file_url,
-                    profile_pic: myPic,
-                    room: currentRoom
-                })
+                body: JSON.stringify({phone: myPhone, room: currentRoom})
             });
-            input.value = '';
-            loadMessages();
-        }
-    }
+            updateOnline();
+        }, 8000);
 
-    document.getElementById('send-btn').onclick = sendMessage;
-    input.addEventListener('keypress', e => {
-        if (e.key === 'Enter') sendMessage();
-    });
-
-    // Emoji picker
-    document.getElementById('emoji-btn').onclick = () => {
-        document.getElementById('emoji-picker').style.display = 
-            document.getElementById('emoji-picker').style.display === 'block' ? 'none' : 'block';
-    };
-    document.getElementById('emoji-picker').addEventListener('emoji-click', e => {
-        input.value += e.detail.unicode;
-        input.focus();
-    });
-
-    // Attach file
-    document.getElementById('attach-btn').onclick = () => {
-        document.getElementById('file-input').click();
-    };
-
-    // Voice recording (inabaki kufanya kazi)
-    let recorder;
-    let audioChunks = [];
-    document.getElementById('voice-btn').addEventListener('mousedown', async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({audio: true});
-            recorder = new MediaRecorder(stream);
-            audioChunks = [];
-            recorder.start();
-            document.getElementById('voice-btn').textContent = '⏺️';
-        } catch (e) {
-            alert("Ruhusu microphone kwanza");
-        }
-    });
-    document.getElementById('voice-btn').addEventListener('mouseup', () => {
-        if (recorder) recorder.stop();
-        document.getElementById('voice-btn').textContent = '🎤';
-    });
-    document.getElementById('voice-btn').addEventListener('mouseleave', () => {
-        if (recorder && recorder.state === 'recording') {
-            recorder.stop();
-            document.getElementById('voice-btn').textContent = '🎤';
-        }
-    });
-    if (typeof MediaRecorder !== 'undefined') {
-        document.addEventListener('readystatechange', () => {
-            if (document.readyState === 'complete') {
-                const voiceBtn = document.getElementById('voice-btn');
-                voiceBtn.addEventListener('touchstart', async (e) => {
-                    e.preventDefault();
-                    try {
-                        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
-                        recorder = new MediaRecorder(stream);
-                        audioChunks = [];
-                        recorder.start();
-                        voiceBtn.textContent = '⏺️';
-                    } catch (e) {}
-                });
-                voiceBtn.addEventListener('touchend', () => {
-                    if (recorder) recorder.stop();
-                    voiceBtn.textContent = '🎤';
-                });
+        // Load messages na append tu mpya
+        async function loadMessages() {
+            try {
+                const res = await fetch(`/api/messages/${currentRoom}`);
+                const msgs = await res.json();
+                
+                if (msgs.length > lastMessageCount) {
+                    for (let i = lastMessageCount; i < msgs.length; i++) {
+                        addMessage(msgs[i], msgs[i].phone === myPhone);
+                    }
+                    lastMessageCount = msgs.length;
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                }
+            } catch (e) {
+                console.log("Error loading messages:", e);
             }
+        }
+
+        // Load mara ya kwanza na kila sekunde 2
+        loadMessages();
+        setInterval(loadMessages, 2000);
+        updateOnline();
+
+        function addMessage(data, isOwn) {
+            const div = document.createElement('div');
+            div.className = `message ${isOwn ? 'sent' : 'received'}`;
+            let content = `<strong>${data.username}</strong><br>`;
+            if (data.message) content += data.message.replace(/\n/g, '<br>');
+            if (data.file_url) {
+                if (data.file_url.endsWith('.mp4')) {
+                    content += `<video src="${data.file_url}" controls style="max-width:100%; border-radius:8px;"></video>`;
+                } else if (data.file_url.endsWith('.webm') || data.file_url.endsWith('.wav')) {
+                    content += `<audio src="${data.file_url}" controls></audio><br>🔊 Voice note`;
+                } else {
+                    content += `<img src="${data.file_url}" onclick="window.open(this.src)" style="max-width:100%; border-radius:8px; margin-top:8px;">`;
+                }
+            }
+            content += `<div class="time">${data.time} ${isOwn ? '✓✓' : ''}</div>`;
+            div.innerHTML = content;
+            messagesDiv.appendChild(div);
+        }
+
+        // Send message
+        async function sendMessage() {
+            const msg = input.value.trim();
+            let file_url = null;
+
+            if (document.getElementById('file-input').files[0]) {
+                const fd = new FormData();
+                fd.append('file', document.getElementById('file-input').files[0]);
+                const res = await fetch('/upload', {method: 'POST', body: fd});
+                const json = await res.json();
+                if (json.url) file_url = json.url;
+                document.getElementById('file-input').value = '';
+            }
+
+            if (msg || file_url) {
+                await fetch('/api/send', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        username: myName,
+                        phone: myPhone,
+                        message: msg,
+                        file_url: file_url,
+                        profile_pic: myPic,
+                        room: currentRoom
+                    })
+                });
+                input.value = '';
+                loadMessages();
+            }
+        }
+
+        document.getElementById('send-btn').onclick = sendMessage;
+        input.addEventListener('keypress', e => {
+            if (e.key === 'Enter') sendMessage();
         });
-    }
-    document.addEventListener('DOMContentLoaded', () => {
+
+        // Emoji picker
+        document.getElementById('emoji-btn').onclick = () => {
+            const picker = document.getElementById('emoji-picker');
+            picker.style.display = picker.style.display === 'block' ? 'none' : 'block';
+        };
+        document.getElementById('emoji-picker').addEventListener('emoji-click', e => {
+            input.value += e.detail.unicode;
+            input.focus();
+        });
+
+        // Attach file
+        document.getElementById('attach-btn').onclick = () => {
+            document.getElementById('file-input').click();
+        };
+
+        // Voice recording
+        let recorder;
+        let audioChunks = [];
+        const voiceBtn = document.getElementById('voice-btn');
+
+        voiceBtn.addEventListener('mousedown', startRecording);
+        voiceBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            startRecording();
+        });
+
+        voiceBtn.addEventListener('mouseup', stopRecording);
+        voiceBtn.addEventListener('touchend', stopRecording);
+        voiceBtn.addEventListener('mouseleave', stopRecording);
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+                recorder = new MediaRecorder(stream);
+                audioChunks = [];
+                recorder.start();
+                voiceBtn.textContent = '⏺️';
+            } catch (e) {
+                alert("Ruhusu microphone ili utume voice note");
+            }
+        }
+
+        function stopRecording() {
+            if (recorder && recorder.state === 'recording') {
+                recorder.stop();
+                voiceBtn.textContent = '🎤';
+            }
+        }
+
         if (typeof MediaRecorder !== 'undefined') {
             recorder.ondataavailable = e => audioChunks.push(e.data);
             recorder.onstop = async () => {
@@ -285,32 +272,30 @@
                 }
             };
         }
-    });
 
-    // Settings modal
-    function openSettings() {
-        document.getElementById('settings-modal').style.display = 'flex';
-        document.getElementById('settings-pic').src = myPic;
-        document.getElementById('edit-name').value = myName;
-    }
-
-    async function saveSettings() {
-        const newName = document.getElementById('edit-name').value.trim() || myName;
-        let newPic = myPic;
-        if (document.getElementById('edit-pic').files[0]) {
-            const fd = new FormData();
-            fd.append('file', document.getElementById('edit-pic').files[0]);
-            const res = await fetch('/upload', {method: 'POST', body: fd});
-            const json = await res.json();
-            if (json.url) newPic = json.url;
+        // Settings
+        function openSettings() {
+            document.getElementById('settings-modal').style.display = 'flex';
+            document.getElementById('settings-pic').src = myPic;
+            document.getElementById('edit-name').value = myName;
         }
-        myName = newName;
-        myPic = newPic;
-        document.getElementById('my-name').textContent = myName;
-        document.getElementById('my-pic').src = myPic;
-        document.getElementById('settings-modal').style.display = 'none';
-    }
-</script>
+
+        async function saveSettings() {
+            const newName = document.getElementById('edit-name').value.trim() || myName;
+            let newPic = myPic;
+            if (document.getElementById('edit-pic').files[0]) {
+                const fd = new FormData();
+                fd.append('file', document.getElementById('edit-pic').files[0]);
+                const res = await fetch('/upload', {method: 'POST', body: fd});
+                const json = await res.json();
+                if (json.url) newPic = json.url;
+            }
+            myName = newName;
+            myPic = newPic;
+            document.getElementById('my-name').textContent = myName;
+            document.getElementById('my-pic').src = myPic;
+            document.getElementById('settings-modal').style.display = 'none';
+        }
+    </script>
 </body>
 </html>
-
